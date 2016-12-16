@@ -1,0 +1,492 @@
+---
+title: "Trends in US Federal and State Prisoner Statistics"
+author: "Amanda Hotvedt"
+date: "December 16, 2016"
+output: html_document
+---
+[Link to RPubs](http://rpubs.com/ahotvedt/finalwriteup)
+
+```{r, echo=FALSE, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(lubridate)
+library(Quandl)
+library(tidyr)
+library(knitr)
+library(forcats)
+library(broom)
+library(stringr)
+library(tm)
+library(USAboundaries)
+library(maptools)
+library(leaflet)
+library(rgdal)
+```
+## Abstract
+The following report explores trends in prisoner statistics for inmates in the United States under either state or federal correctional authority. Most of the data used for this analysis came from the [U.S. Bureau of Justice Statistics](http://www.bjs.gov/index.cfm?ty=pbdetail&iid=5387), and a few other supplementary sources that were used to shed light on trends in the BJS data.
+<br>
+
+The results of an exploratory data analysis suggest that there are correlations between race and type of offense that inmates are serving time for. Additionally, the proportion of Whites, Blacks, and Hispanics serving time in U.S. state and federal prisons do not match up with the racial breakdown of the overall U.S. population. 
+<br>
+
+Finally, the analysis demonstrates that each state in the U.S. has slightly different levels of imprisonment with respect to the state's population. States such as Florida, Texas, Georgia, and Arizona have high imprisonment rates compared to the average, while California, New York, New Jersey, and others have relatively low imprisonment rates.
+
+<br>
+
+## Introduction
+According to an article published in [The Economist](http://www.economist.com/news/leaders/21654619-how-make-americas-penal-system-less-punitive-and-more-effective-jailhouse-nation), at any one time, one in thirty-five American adults is either in prison, on parole, or on probation. Recent criticism of the War on Drugs by President Obama and other prominent leaders has led to a lot of speculation on why the U.S. has such a high number of prisoners relative to its population and why inmate populations are growing. 
+<br>
+<br>
+Despite the critical strides the United States has made in terms of racial and gender equality, incarceration data is often cited as not reflecting this progress. An article by Marc Mauer, [Addressing Racial
+Disparities in Incarceration](http://sentencingproject.org/wp-content/uploads/2016/01/Addressing-Racial-Disparities-in-Incarceration.pdf), discusses the disproportionate rates of incarceration and how those trends impact people of color in the U.S.
+<br>
+<br>
+While this report does not expect to find earth-shattering results that have not been identified, the goal is to use government data from the BJS to see if any connections can be made with other demographic U.S. data. Are recent publications that critique the U.S. prison system warranted? Can these findings be replicated using fairly straightforward data manipulation? My analysis aims to answer the following questions:
+<br>
+
+- Are there more men in prison than women? 
+<br>
+
+- What kind of charges are men sent to prison for, and are they different from the crimes women are charged for? 
+<br>
+
+- What is the racial spread of prison inmates?
+<br>
+
+- Is there a correlation between race and type of offense? 
+<br>
+
+- Do these patterns vary depending on the state in which the prison is located? 
+<br>
+
+- Have these trends changed over time?
+
+<br>
+
+## Methodology
+As mentioned above, I downloaded the [Prisoner 2014 data](http://www.bjs.gov/index.cfm?ty=pbdetail&iid=5387) from the Bureau of Justice Statistics. I chose this data set because it had a combination of demographic data and sentencing characteristics. The data came in the form of 27 CSV files. Each CSV had extra words in the cells along with the actual data, so I had to manually clean up the data sets in Excel before I could export them into R. I essentially just deleted the rows that had sentences of data description so that I was left only with variable names and values in each of the cells. 
+<br>
+
+After sifting through the files in Excel, I ended up choosing only a handful of the CSV files that I most wanted to investigate. I then imported those files into R and started to clean and shape the data to be even more helpful for my analysis.  The fct_recode function came in very handy! To supplement the BJS data, I went to [SocialExplorer.com](socialexplorer.com) and created a report that gave me data for each state in the U.S. about population, land area, and much more. 
+<br>
+
+I utilized many bar plots to look at proportions of each race and sex in the various inmate populations. I also used a scatter plot to compare prison populations to total state populations, and fit a line to it to see what states were outliers. These methods led me to the analysis  below. Written descriptions under each graphic give more detailed interpretations of each visualization.
+<br>
+
+## Admissions to Federal and State Prisons
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+admissions_state <- read_csv("p14at01.csv") %>% 
+  rename(state_admissions = `Admissions`) %>% 
+  mutate(state_admissions_lag = lag(state_admissions)) %>% 
+  mutate(state_absolute_change = state_admissions_lag - state_admissions) %>%
+  mutate(state_relative_change = state_absolute_change/state_admissions_lag)
+
+admissions_federal <- read_csv("p14at02.csv") %>% 
+  rename(federal_admissions = `Admissions`) %>% 
+  mutate(federal_admissions_lag = lag(federal_admissions)) %>% 
+  mutate(federal_absolute_change = federal_admissions_lag - federal_admissions) %>% 
+  mutate(federal_relative_change = federal_absolute_change/federal_admissions_lag) 
+  
+admissions <- left_join(admissions_state, admissions_federal, by="Year")
+
+admissions %>% 
+  select(Year, state_admissions, state_absolute_change, federal_admissions, federal_absolute_change) %>% 
+  kable(col.names=c("Year", "State Admissions", "Change in State Admissions", "Federal Admissions", "Change in Federal Admissions"))
+```
+
+This chart tells us the year to year change in number of inmates admitted to both state and federal prisons. We can see that beginning in 2007, state prisons started to admit more and more inmates each year all the way through 2012, where 58,413 more inmates were admitted than the previous year. 
+<br>
+<br>
+While this table is valuable for this information, it makes it hard to visualize differences between state and federal prisons because state prisons hold hundreds of thousands more inmates than federal prisons. Therefore, it makes sense to look at *relative* change instead, which is explored below.
+
+<br>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+
+# Graph showing relative change of inmates admitted each year
+ggplot() +
+  geom_line(data=admissions_state, aes(x=Year, y=state_relative_change, color="State Prison Admissions")) +
+  geom_line(data=admissions_federal, aes(x=Year, y=federal_relative_change, color="Federal Prison Admissions")) +
+  labs(x='Year', y='Relative Change in Inmates', title='Relative Change in Number of Inmates Admitted') +
+  theme(legend.position = "right")
+```
+
+This graph of relative change in prison admissions gives a better visualization of how state and federal prisons differ in changes in number of admissions relative to the total admitted inmate population.
+<br>
+<br>
+Once again, we see the steady increase in inmates admitted each year for the state prisons, shown in blue. We see much more volatility for federal prison admissions, shown by the zig-zagged pink line on the graph. One dramatic change to recognize is in 2011, where the number of inmates admitted relative to total admissions dropped significantly.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+### Load the datasets ###
+state_prisoners_by_offense_sex_race2013 <- read_csv("p14at04.csv")
+federal_prisoners_by_offense_sex_race2014 <- read_csv("p14at05.csv")
+
+### Clean the data, creating new variables ###
+state_prisoners_by_offense_sex_race2013 <- 
+  state_prisoners_by_offense_sex_race2013 %>%
+  rename(most_serious_offense = `Most serious offense`,
+         offense = X2,
+         all_inmates = `All inmates/a`,
+         White = `White/b`,
+         Black = `Black/b`) %>%
+  mutate(percent_of_all_inmates = all_inmates/1325305) %>% 
+  mutate(prop_male = Male/all_inmates) %>% 
+  mutate(prop_female = Female/all_inmates) %>%
+  mutate(prop_white = White/all_inmates) %>% 
+  mutate(prop_black = Black/all_inmates) %>% 
+  mutate(prop_hispanic = Hispanic/all_inmates) %>%
+  mutate(prop_other_race = 1-((White+Black+Hispanic)/all_inmates)) %>% 
+  mutate(most_serious_offense = fct_recode(most_serious_offense,
+                    "Other" = "Other/unspecified/g")) %>% 
+  mutate(offense = fct_recode(offense,
+            "Total" = "Totalc",
+            "Murder" = "Murderd",
+            "Other drug" = "Other drug/e",
+            "Other public order" = "Other public order/f")) %>% 
+  mutate(offense_cat = ifelse(is.na(offense), as.character(most_serious_offense), as.character(offense))) %>% 
+  mutate(offense_category = fct_recode(offense_cat,
+      "NA" = "Violent" ,
+      "NA" = "Property",
+      "NA" = "Drug",
+      "NA" = "Public order",
+      "Violent" = "Murder",
+      "Violent" = "Manslaughter",
+      "Violent" = "Rape/sexual assault",
+      "Violent" = "Robbery",
+      "Violent" = "Aggravated or simple assault",
+      "Violent" = "Other violent",
+      "Property" = "Burglary",
+      "Property" = "Larceny-theft",
+      "Property" = "Motor vehicle theft",
+      "Property" = "Fraud",
+      "Property" = "Other property",
+      "Drug" = "Drug possession",
+      "Drug" = "Other drug",
+      "Public order" = "Weapons",
+      "Public order" = "Driving under the influence",
+      "Public order" = "Other public order")) %>% 
+  mutate(data = "state2013")
+
+
+federal_prisoners_by_offense_sex_race2014 <- 
+  federal_prisoners_by_offense_sex_race2014 %>%
+  rename(most_serious_offense = `Most serious offense`,
+         offense = X2,
+         all_inmates = `All inmates/a`,
+         White = `White/b`,
+         Black = `Black/b`) %>% 
+  mutate(percent_of_all_inmates = all_inmates/192663) %>% 
+  mutate(prop_male = Male/all_inmates) %>% 
+  mutate(prop_female = Female/all_inmates) %>%
+  mutate(prop_white = White/all_inmates) %>% 
+  mutate(prop_black = Black/all_inmates) %>% 
+  mutate(prop_hispanic = Hispanic/all_inmates) %>%
+  mutate(prop_other_race = 1-((White+Black+Hispanic)/all_inmates)) %>% 
+  mutate(most_serious_offense = fct_recode(most_serious_offense,
+                      "Drug" = "Drug/f",
+                      "Other" = "Other/unspecified/g")) %>%
+  mutate(offense = fct_recode(offense,
+                "Total" = "Total/c,d",
+                "Homicide" = "Homicide/e",
+                "Other public order" = "Other")) %>% 
+  mutate(offense_cat = ifelse(is.na(offense), as.character(most_serious_offense), as.character(offense))) %>% 
+  mutate(offense_category = fct_recode(offense_cat,
+      "Total" = "Total",
+      "NA" = "Violent",
+      "Violent" = "Homicide",
+      "Violent" = "Robbery",
+      "Violent" = "Other violent",
+      "NA" = "Property",
+      "Property" = "Burglary",
+      "Property" = "Fraud",
+      "Property" = "Other property",
+      "NA" = "Public order",
+      "Public order" = "Immigration",
+      "Public order" = "Weapons",
+      "Public order" = "Other public order")) %>% 
+  mutate(data = "federal2014")
+
+```
+
+<br>
+<br>
+
+## Introducing the Offenses by Category
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+state_prisoners_by_offense_sex_race2013 %>% 
+  filter(offense_category != "NA") %>% 
+  filter(offense_category != "Total") %>% 
+  group_by(offense_category) %>% 
+  select(offense_cat, offense_category) %>% 
+  kable(col.names=c("Offense", "Offense Category"))
+```
+
+<br>
+
+## Distribution of Inmates by Offense Category
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+prop_inmates_per_category <-
+  state_prisoners_by_offense_sex_race2013 %>% 
+  filter(!is.na(most_serious_offense)) %>% 
+  select(most_serious_offense, all_inmates, percent_of_all_inmates)
+
+ggplot(data=prop_inmates_per_category, aes(x=reorder(most_serious_offense, -percent_of_all_inmates), y=percent_of_all_inmates, fill=most_serious_offense)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label = all_inmates), vjust=-0.25) +
+  scale_fill_brewer(palette = "Set3") +
+  guides(fill = "none") +
+  labs(title = "Inmates by Offense Category under State Jurisdiction in 2013", x = "Most Serious Offense", y = "Proportion of Inmates")
+```
+<br>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+prop_inmates_per_category_FED <-
+  federal_prisoners_by_offense_sex_race2014 %>% 
+  filter(!is.na(most_serious_offense)) %>% 
+  select(most_serious_offense, all_inmates, percent_of_all_inmates)
+
+ggplot(data=prop_inmates_per_category_FED, aes(x=reorder(most_serious_offense, -percent_of_all_inmates), y=percent_of_all_inmates, fill=most_serious_offense)) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label = all_inmates), vjust=-0.25) +
+  scale_fill_brewer(palette = "Set3") +
+  guides(fill = "none") +
+  labs(title = "Inmates by Offense Category under Federal Correctional Authority in 2014", x = "Most Serious Offense", y = "Proportion of Inmates")
+```
+
+From these graphs, we can see that the most common offense for which inmates are sentenced to state prisons is Violent crimes. For federal prisons, Drug offenses account for about 50% of inmates. 
+<br>
+<br>
+At first, this seems like it may be a very interesting result to look into, but upon further research it becomes clear why this difference exists. The following [link](https://federaldrugcharges.net/topics/difference-between-federal-and-state-drug-charges/) explains how federal offenses apply to drug charges that are more serious that involve the manufacturing or intent to distribute drugs. Further, these happen to be the crimes that get prosecuted at all, compared to small offenses such as possession cases that are often not even taken to court. 
+
+<br>
+
+## Gender Trends in Prison Data
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+state_prisoners_by_offense_sex_race2013 %>% 
+  filter(offense == "Total") %>% 
+  select(all_inmates, prop_male, prop_female) %>% 
+  kable(digits=3, col.names = c('Total Number of Inmates', 'Proportion that are Male', 'Proportion that are Female'), caption = "State Prisons in 2013")
+```
+<br>
+```{r, echo=FALSE, message=FALSE, fig.width=12, fig.height=6}
+federal_prisoners_by_offense_sex_race2014 %>% 
+  filter(offense == "Total") %>% 
+  select(all_inmates, prop_male, prop_female) %>% 
+  kable(digits=3, col.names = c('Total Number of Inmates', 'Proportion that are Male', 'Proportion that are Female'), caption = "Federal Prisons in 2014")
+```
+
+The ratio of men to women is almost exactly the same within state prison inmates and federal prison inmates. The U.S. prison population is overwhelmingly made up of men, with about 93% of inmates being male. Additionally, these tables tell us that state prisons are much more populated than federal prisons. 
+
+<br>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+state3 <- state_prisoners_by_offense_sex_race2013 %>% 
+  filter(!is.na(most_serious_offense)) %>% 
+  arrange(desc(prop_black))
+
+state4 <- gather(data=state3, key=sex, value=n, prop_male, prop_female)
+
+ggplot(state4, aes(x=most_serious_offense, y=n, fill=sex)) +
+  geom_bar(stat="identity") +
+  geom_hline(yintercept = .93) +
+  labs(title = "Sex Distribution of Inmates by Category under State Jurisdiction in 2013", x = "Offense Category", y = "Proportion of Inmates") +
+  scale_fill_discrete(name = "Sex", labels = c("Female", "Male"))
+```
+
+This bar plot shows that while females make up only about 7% of inmates in state prisons, this percentage varies depending on the offense committed. Drug and Property offenses are made up of more than 7% women, whereas Violent offenses have fewer than 7% women. This result supports the hypothesis that offenses are somewhat gendered
+<br>
+<br>
+
+## Race Trends in Prison Data
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+RACE_state <- state_prisoners_by_offense_sex_race2013 %>% 
+  filter(offense == "Total") %>% 
+  select(offense, all_inmates, prop_white, prop_black, prop_hispanic, prop_other_race)
+
+RACE_state <- gather(data=RACE_state, key = race, value = n, prop_white, prop_black, prop_hispanic, prop_other_race)
+
+ggplot(RACE_state, aes(x=reorder(race,-n), y=n, fill=race)) +
+  geom_bar(stat="identity") +
+  guides(fill = "none") +
+  geom_text(aes(3,.6,label = "Proportion of US that is Black: 12%", vjust = 1.5), colour="gray30") +
+  geom_text(aes(3,.55,label = "Proportion of US that is White: 61%", vjust = 1.5), colour="gray30") +
+    geom_text(aes(3,.5,label = "Proportion of US that is Hispanic: 18%", vjust = 1.5), colour="gray30") +
+  labs(title = "Race Distribution of Inmates under State Jurisdiction in 2013", x = "Race", y = "Proportion of Inmates") +
+  geom_text(aes(label=c('White: 35%', 'Black: 38%', 'Hispanic: 21%', 'Other: 6%'), vjust=1.5)) 
+```
+<br>
+From the graph above, we see that Black inmates make up the largest proportion out of all inmates at 38%, with White inmates just lower than that at 35%. While this data alone suggests that the ratio of White to Black inmates is fairly even, looking at the total US population racial breakdown reveals much more. According to this [source](http://kff.org/other/state-indicator/distribution-by-raceethnicity/?currentTimeframe=0), about 12% of the US population is Black and and 61% of the US population is White.
+
+This tells us that a disproportionate amount of Blacks are in state prisons compared to Whites when looking at the proportion of the US population that each race makes up. What this finding cannot tell us, however, if this is due to racist tendencies of the judicial system or differences in crime prevalence within each race.
+<br>
+<br>
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+RACE_OFFENSETYPE_state <- state_prisoners_by_offense_sex_race2013 %>%
+  filter(!is.na(most_serious_offense)) %>% 
+  select(most_serious_offense, all_inmates, prop_white, prop_black, prop_hispanic, prop_other_race)
+  
+RACE_OFFENSETYPE_state <- gather(data=RACE_OFFENSETYPE_state, key = race, value = n, prop_white, prop_black, prop_hispanic, prop_other_race)
+
+RACE_OFFENSETYPE_state2 <- RACE_OFFENSETYPE_state %>% 
+  mutate(prop = round(n, digits=2))
+  
+ggplot(RACE_OFFENSETYPE_state2, aes(x=most_serious_offense, y=n, fill=race)) +
+  geom_bar(stat="identity") +
+  scale_fill_discrete(name = "Race", labels = c("Black", "Hispanic", "Other", "White")) +
+  labs(title = "Race Distribution of Inmates by Category under State Jurisdiction in 2013", x = "Offense Category", y = "Proportion of Inmates") +
+  geom_text(aes(label = prop), position="stack", vjust=1.3)
+
+```
+
+We now look at the distribution of inmates by race across the offense categories. In state prisons, 40% of inmates sentenced for Violent crimes are Black, which can be compared to the 38% of inmates that Black prisoners make up of the total inmate population. For Property crimes, however, Black inmates make up only 32% of offenders, whereas White inmates make up 46% of Property crime offenders although Whites make up only 35% of the overall inmate population. This visualization makes it easy to see that there is some correlation between race and the type of offense one is sentenced for.
+
+<br>
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+state2 <- state_prisoners_by_offense_sex_race2013 %>% 
+  filter(offense_category!="NA") %>% 
+  filter(offense_category!="Total") %>%
+  group_by(offense_category) %>% 
+  arrange(desc(prop_black))
+
+ggplot(data = state2, aes(x = reorder(offense_cat, prop_white), y = prop_white, fill = offense_category)) +
+  geom_bar(stat = "identity") +
+  geom_hline(yintercept=0.35) +
+  coord_flip() +
+  labs(title = "Proportion of Inmates that are White per Offense", x = "Offense", y = "Proportion") +
+  scale_fill_brewer(palette = "Accent")
+```
+
+This graph looks deeper into each offense category by examining the offenses within each category. It confirms that although White inmates make up 35% of the total inmate population, White inmates make up a much higher percentage of Property crime offenders (shown in purple). The black line represents the 35% by which to compare the proportion of Whites in each offense type.
+<br>
+<br>
+
+## Breaking Down Prisoner Populations by State
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+prisoners_table04 <- read_csv("p14t04.csv")
+
+prisoners2014 <- prisoners_table04 %>% 
+  select(X1, X2, `2014`, X8, X9) %>% 
+  mutate(yearend = 2014) %>% 
+  rename(jurisdiction = X1, total = `2014`, state = X2, male = X8, female = X9) %>% 
+  slice(3:54) %>% 
+  mutate(state = fct_recode(state,
+                            "Alabama" = "Alabama/c",
+                            "Alaska" = "Alaska/d,e,f",
+                            "Arizona" = "Arizona/c",
+                            "Connecticut" = "Connecticut/f,g",
+                            "Delaware" = "Delaware/f",
+                            "Hawaii" = "Hawaii/f",
+                            "Idaho" = "Idaho/c",
+                            "Kansas" = "Kansas/c,g",
+                            "Nevada" = "Nevada/h",
+                            "North Dakota" = "North Dakota/c",
+                            "Pennsylvania" = "Pennsylvania/c",
+                            "Rhode Island" = "Rhode Island/f",
+                            "South Dakota" = "South Dakota/c",
+                            "Utah" = "Utah/c",
+                            "Vermont" = "Vermont/f",
+                            "Wisconsin" = "Wisconsin/g"))
+
+prisoners2014 <- prisoners2014 %>% 
+  select(state, total, male, female, yearend) %>% 
+  slice(3:52)
+
+social_explorer <- read_csv("R11305911_SL040.csv")
+  
+social_explorer <- social_explorer %>% 
+  rename(total_pop = SE_T001_001) %>% 
+  rename(White = SE_T054_002) %>% 
+  rename(Black = SE_T054_003) %>%
+  filter(Geo_NAME != "District of Columbia")
+
+
+blah <- left_join(prisoners2014, social_explorer, by=c("state" = "Geo_NAME"))
+ 
+blah <- blah %>% 
+  mutate(state_abb = state.abb) %>% 
+  rename(inmate_pop = total) %>% 
+  mutate(inmate_pop = as.numeric(inmate_pop))
+
+ggplot(data=blah, aes(x=total_pop, y=inmate_pop, label=state_abb)) +
+  geom_text() +
+  geom_smooth(method="lm", se=TRUE) +
+  xlab("State Population") +
+  ylab("Inmate Population") +
+  ggtitle("Total State Population v. Inmate Population Under State and Federal Authority in 2014")
+```
+<br>
+<br>
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=12, fig.height=6}
+blah2 <- blah %>% 
+  filter(state!="California") %>% 
+  filter(state!="Texas") %>% 
+  filter(state!="Florida") %>% 
+  filter(state!="New York")
+
+ggplot(data=blah2, aes(x=total_pop, y=inmate_pop, label=state_abb)) +
+  geom_text() +
+  geom_smooth(method="lm", se=TRUE, colour="red") +
+  xlab("State Population") +
+  ylab("Inmate Population") +
+  ggtitle("Total State Population v. Inmate Population Under State and Federal Authority in 2014 (Zoomed)")
+```
+
+The graphs above fit a "best fit line" to a scatterplot of points that reference a state in the US's total population compared to its inmate population. The second graph is a zoomed-in version that excludes California, Texas, Florida, and New York in order to get a better look at the lower left corner where most of the states lie.
+<br>
+<br>
+States that lie above the line have a higher inmate population to total population ratio, meaning they have greater imprisonment rate. From my analysis, states that appear to have these high rates are Georgia, Arizona, Louisiana, Oklahoma, and others. States such as Massachusetts, Washington, New Jersey, and Minnesota have relatively low imprisonment rates compared to the average.
+
+<br>
+
+## Limitations of the Data
+A major limitation of my data, and thus my biggest disappointment with my analysis, is that the Bureau of Justice statistics does not provide data on a per-prisoner basis. I was hoping to have data that allowed me to look at each prisoner's demographics, sentencing characteristics, and other information. With that, I would have liked to investigate if there were racial or gender differences in sentencing characteristics for the exact same offenses. However, likely due to privacy rules for inmates, all of the data was very general. For example, it gave me the percentage of Whites in prison for Violent crimes, but didn't allow me to see how one particular White inmate's sentence for a Violent crime compared to one particular Black inmate's sentence for the same crime. 
+
+Without that specifity in the data, I mostly recreated analysis done by the BJS with this data. One way I expanded on this was by comparing the prisoner statistics data to other data such as US population breakdowns.
+
+<br>
+
+## Conclusions
+The Exploratory Data Analysis above provides interesting insights into the US prison population, and there are even still more ways to look at and manipulate the data that I didn't get to in the time I had. Even so, my analysis brought forward some key trends that I will summarize here: 
+<br>
+<br>
+
+- The number of inmates admitted each year to state prisons increased from 2007 to 2012 before dropping significantly. Admissions to federal prisons have had more volatility in both positive and negative directions in the past 10 years
+<br>
+
+- While the state prison population is about 38% Black, the US total population is only about 12% Black. While Whites make up about 61% of the United States, they make up only 35% of the prison population. The question that this data cannot answer is "Why?"
+<br>
+
+- The proportion of each race (White, Black, Hispanic) in each crime offense category is not the same of the total proportion of each race in the overall prison population, suggesting that there might be a relationship between most serious offense committed and race
+
+- U.S. states having varying incarceration rates. Florida, Texas, Georgia, and Arizona are among those that have high ratios of inmate population to total state population
+<br>
+<br>
+
+While I could have created more and more bar plots to examine racial differences in offense types, the above analysis provides a helpful snapshot into the racial breakdown of U.S. prisons. I believe this report is by no means a complete analysis into the US judicial and prison systems, but is a strong starting point for further research and investigation into differences in sentencing characteristics with regards to race, sex, socioeconomic background, and more. Finally, I would recomend further research to extend beyond the U.S. that looks to compare and contrast U.S. prisoner statistics to the rest of the world.
+
+
+<br>
+<br>
+
+## References
+<br>
+*Data Sets*
+<br>
+[BJS: Prisoners in 2014](http://www.bjs.gov/index.cfm?ty=pbdetail&iid=5387)
+<br>
+[Social Explorer data](http://www.socialexplorer.com/tables/C2010/R11305911)
+<br>
+<br>
+*Supplemental Research*
+<br>
+[US Population, Racial Breakdown data](http://kff.org/other/state-indicator/distribution-by-raceethnicity/?currentTimeframe=0)
+<br>
+[Discussion of Federal Drug Charges](https://federaldrugcharges.net/topics/difference-between-federal-and-state-drug-charges/)
+<br>
+[The Economist: How to Make America's Penal System Less Punitive and More Effective](http://www.economist.com/news/leaders/21654619-how-make-americas-penal-system-less-punitive-and-more-effective-jailhouse-nation)
+<br>
+[National Review: The Truth About Mass Incarceration](http://www.nationalreview.com/article/424059/mass-incarceration-prison-reform)
+<br>
+[Sentencing Project: Addressing Racial Disparities in Incarceration](http://sentencingproject.org/wp-content/uploads/2016/01/Addressing-Racial-Disparities-in-Incarceration.pdf)
