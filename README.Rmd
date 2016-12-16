@@ -14,23 +14,98 @@ output:
 ---
 
 
-* Name: 
-* Project title:
-* Write-up on RPubs: <http://rpubs.com/rudeboybert/Tree_Growth_Differences>
-* Abstract: Hello World!
+* Name: Amanda Hotvedt
+* Project title: Trends in US Federal and State Prisoner Statistics
+* Write-up on RPubs: <http://rpubs.com/ahotvedt/finalwriteup>
+* Abstract: The following report explores trends in prisoner statistics for inmates in the United States under either state or federal correctional authority. Most of the data used for this analysis came from the [U.S. Bureau of Justice Statistics](http://www.bjs.gov/index.cfm?ty=pbdetail&iid=5387), and a few other supplementary sources were used to shed light on trends in the BJS data. The results of an Exploratory Data Analysis suggest that there are correlations between race and type of offense that inmates are serving time for. Additionally, the proportion of Whites, Blacks, and Hispanics serving time in U.S. state and federal prisons do not match up with the racial breakdown of the overall U.S. population. Finally, the analysis demonstrates that each state in the U.S. have slightly different levels of imprisonment with respect to the state's population. States such as Florida, Texas, Georgia, and Arizona have high imprisonment rates compared to the average, while California, New York, New Jersey, and others have relatively low imprisonment rates.
 
+<br>
 
-```{r, echo=FALSE, message=FALSE}
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
 #
 # Include code for one plot here
 #
 library(ggplot2)
 library(dplyr)
-small <- sample_n(diamonds, 2000) 
-ggplot(data=diamonds, aes(x=carat,y=price,colour=cut)) +
-  geom_point() +
-  scale_y_log10() + 
-  facet_wrap(~cut) +
-  ggtitle("Replace this plot with one of your own")
+library(readr)
+library(lubridate)
+library(Quandl)
+library(tidyr)
+library(knitr)
+library(forcats)
+library(broom)
+library(stringr)
+library(tm)
+library(USAboundaries)
+library(maptools)
+library(leaflet)
+library(rgdal)
+
+setwd("~/Desktop/Data Science/Homework/Final Project/Prisoners 2014 files")
+
+state_prisoners_by_offense_sex_race2013 <- read_csv("p14at04.csv")
+
+state_prisoners_by_offense_sex_race2013 <- 
+  state_prisoners_by_offense_sex_race2013 %>%
+  rename(most_serious_offense = `Most serious offense`,
+         offense = X2,
+         all_inmates = `All inmates/a`,
+         White = `White/b`,
+         Black = `Black/b`) %>%
+  mutate(percent_of_all_inmates = all_inmates/1325305) %>% 
+  mutate(prop_male = Male/all_inmates) %>% 
+  mutate(prop_female = Female/all_inmates) %>%
+  mutate(prop_white = White/all_inmates) %>% 
+  mutate(prop_black = Black/all_inmates) %>% 
+  mutate(prop_hispanic = Hispanic/all_inmates) %>%
+  mutate(prop_other_race = 1-((White+Black+Hispanic)/all_inmates)) %>% 
+  mutate(most_serious_offense = fct_recode(most_serious_offense,
+                    "Other" = "Other/unspecified/g")) %>% 
+  mutate(offense = fct_recode(offense,
+            "Total" = "Totalc",
+            "Murder" = "Murderd",
+            "Other drug" = "Other drug/e",
+            "Other public order" = "Other public order/f")) %>% 
+  mutate(offense_cat = ifelse(is.na(offense), as.character(most_serious_offense), as.character(offense))) %>% 
+  mutate(offense_category = fct_recode(offense_cat,
+      "NA" = "Violent" ,
+      "NA" = "Property",
+      "NA" = "Drug",
+      "NA" = "Public order",
+      "Violent" = "Murder",
+      "Violent" = "Manslaughter",
+      "Violent" = "Rape/sexual assault",
+      "Violent" = "Robbery",
+      "Violent" = "Aggravated or simple assault",
+      "Violent" = "Other violent",
+      "Property" = "Burglary",
+      "Property" = "Larceny-theft",
+      "Property" = "Motor vehicle theft",
+      "Property" = "Fraud",
+      "Property" = "Other property",
+      "Drug" = "Drug possession",
+      "Drug" = "Other drug",
+      "Public order" = "Weapons",
+      "Public order" = "Driving under the influence",
+      "Public order" = "Other public order")) %>% 
+  mutate(data = "state2013")
+
+
+
+RACE_OFFENSETYPE_state <- state_prisoners_by_offense_sex_race2013 %>%
+  filter(!is.na(most_serious_offense)) %>% 
+  select(most_serious_offense, all_inmates, prop_white, prop_black, prop_hispanic, prop_other_race)
+  
+RACE_OFFENSETYPE_state <- gather(data=RACE_OFFENSETYPE_state, key = race, value = n, prop_white, prop_black, prop_hispanic, prop_other_race)
+
+RACE_OFFENSETYPE_state2 <- RACE_OFFENSETYPE_state %>% 
+  mutate(prop = round(n, digits=2))
+  
+ggplot(RACE_OFFENSETYPE_state2, aes(x=most_serious_offense, y=n, fill=race)) +
+  geom_bar(stat="identity") +
+  scale_fill_discrete(name = "Race", labels = c("Black", "Hispanic", "Other", "White")) +
+  labs(title = "Race Distribution of Inmates by Category under State Jurisdiction in 2013", x = "Offense Category", y = "Proportion of Inmates") +
+  geom_text(aes(label = prop), position="stack", vjust=1.3)
+
 ```
 
