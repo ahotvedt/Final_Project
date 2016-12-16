@@ -8,4 +8,6 @@ MATH 216 Data Science Final Project (Fall 2016)
 
 <br>
 
-![](README_files/figure-markdown_github/unnamed-chunk-1-1.png)
+![](README_files/figure-markdown_github/AbstractPhoto.jpeg)
+
+
